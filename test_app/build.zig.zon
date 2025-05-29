@@ -1,0 +1,15 @@
+.{
+    .name = .examples_raspberrypi_rp2xxx,
+    .fingerprint = 0xffa4bfa1ed94c16f,
+    .version = "0.0.0",
+    .dependencies = .{
+        .microzig = .{ .path = "../microzig" },
+    },
+    .paths = .{
+        "README.md",
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "scripts",
+    },
+}
