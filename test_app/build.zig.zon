@@ -4,6 +4,7 @@
     .version = "0.0.0",
     .dependencies = .{
         .microzig = .{ .path = "../microzig" },
+        // .kernel = .{ .path = "../kernel" },
     },
     .paths = .{
         "README.md",

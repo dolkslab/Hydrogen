@@ -1,8 +1,6 @@
 const std = @import("std");
 const Task = @import("task.zig");
-
-const zig_lpc = @import("zig-lpc");
-const cpu = zig_lpc.cpu;
+const microzig = @import("microzig");
 
 // The actual queue of tasks to run
 var task_queue: Queue = undefined;
@@ -67,16 +65,16 @@ export fn switch_current_task() void {
     current_task = get_next_ready_task() orelse &temp_shit[0];
 }
 
-export const balls: u8 = 0x20;
-fn pendsv_isr() callconv(.Naked) void {
+const max_prio_level = std.fmt.parseInt(u8, microzig.chip.properties.@"cpu.nvicPrioBits", 10) catch unreachable;
+
+pub fn pendsv_isr() callconv(.Naked) void {
     asm volatile (
         \\
         // Store the context to the stack that was not saved on exception entry.
         // Test for bit 4 in the LR to check if FPU was active, if so, save its context (expensive!)
         \\ mrs          r0, psp
-        \\ tst          r14, 0x10 
-        \\ it           eq
-        \\ vstmdbeq     r0!, {s16-s31}
+
+        //\\ vlstm        r0
         \\ stmdb        r0!, {r4-r11, r14}
         \\
         // Obtain the active task by dereferencing r2.
@@ -106,9 +104,9 @@ fn pendsv_isr() callconv(.Naked) void {
         \\
         // Now execute the context saving in reverse, pop registers from the stack
         \\ ldmia        r0!, {r4-r11, r14}
-        \\ tst          r14, #0x10
-        \\ it           eq
-        \\ vldmiaeq     r0!, {s16-s31}
+        //\\ tst          r14, #0x10
+        //\\ it           eq
+        //\\ vldmiaeq     r0!, {s16-s31}
         \\
         \\ msr          psp, r0
         \\ isb
@@ -117,11 +115,11 @@ fn pendsv_isr() callconv(.Naked) void {
         \\ bx           r14
         : //outputs
         : [current_task_ptr] "{r2}" (&current_task),
-          [max_prio_lvl] "i" (zig_lpc.cpu.NVIC_PRIOBITS_MASK),
+          [max_prio_lvl] "i" (max_prio_level),
     );
 }
 
-fn svcall_isr() callconv(.C) void {
+pub fn svcall_isr() callconv(.C) void {
     //@breakpoint();
     const sp_addr: [*]align(8) usize = current_task.top_of_stack;
     // look ma no compiler
@@ -138,14 +136,6 @@ fn svcall_isr() callconv(.C) void {
         : ".ltorg"
     );
 }
-
-pub const pendsv_handler = zig_lpc.interrupt.Handler{
-    .Naked = pendsv_isr,
-};
-
-pub const svcall_handler = zig_lpc.interrupt.Handler{
-    .C = svcall_isr,
-};
 
 pub const Queue = std.PriorityQueue(Task, void, compare);
 // highest priority value gets popped first

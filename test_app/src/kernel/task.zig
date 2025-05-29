@@ -1,5 +1,4 @@
 const std = @import("std");
-const zig_lpc = @import("zig-lpc");
 
 const Self = @This();
 
@@ -147,5 +146,5 @@ const INITIAL_LR_EXC_RET: usize = 0xFFFFFFFD;
 
 // this should not be here either
 fn default_return() void {
-    zig_lpc.halt(-31);
+    @panic("Illegal return from base process!");
 }
