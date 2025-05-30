@@ -36,10 +36,13 @@ pub fn main() !void {
         .clock_config = rp2xxx.clock_config,
     });
     rp2xxx.uart.init_logger(uart);
-
+    led.set_function(.sio);
+    led.set_direction(.out);
+    led.toggle();
+    microzig.cpu.interrupt.enable_interrupts();
     kernel.start();
 
-    microzig.cpu.interrupt.enable_interrupts();
+    //led.set_function(.sio);
 
     while (true) {
         asm volatile ("wfi");

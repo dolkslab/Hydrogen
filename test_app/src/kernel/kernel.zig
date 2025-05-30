@@ -4,6 +4,7 @@ const microzig = @import("microzig");
 pub const Scheduler = @import("scheduler.zig");
 pub const Task = @import("task.zig");
 const hal = microzig.hal;
+const led = hal.gpio.num(25);
 
 pub const KERNEL_MAX_TASKS = 20;
 
@@ -21,7 +22,7 @@ pub fn start() void {
     //     .USGFAULTENA = .{ .raw = 1 },
     // });
 
-    //microzig.cpu.peripherals.scb.FPCCR.modify(.{ .LSPACT = .{ .raw = 1 } });
+    microzig.chip.peripherals.PPB.FPCCR.modify(.{ .LSPACT = 1 });
 
     const idle_task = Task.init(idle_task_fn, &stacks[0], std.math.minInt(i16));
 
@@ -32,20 +33,21 @@ pub fn start() void {
     Scheduler.temp_shit[1] = other_task;
 
     // the FPU should be enabled just before starting the first task.
-    //hal.enable_fpu();
+    microzig.cpu.fpu.enable_full();
     Scheduler.start_first_task();
 }
 
 fn idle_task_fn() i32 {
     //@breakpoint();
     var a: u32 = 0;
-    //var f: f32 = 1.2;
+    var f: f32 = 1.2;
     while (true) {
         a +%= 1;
-        //f += 0.1;
+        f += 0.2;
         asm volatile ("nop");
-        if (a % 10000 == 0) {
+        if (a % 1000000 == 0) {
             asm volatile ("nop");
+            led.put(0);
             microzig.cpu.interrupt.exception.set_pending(.PendSV);
         }
     }
@@ -53,10 +55,14 @@ fn idle_task_fn() i32 {
 
 fn other_task_fn() i32 {
     var a: u32 = 0;
+    var f: f32 = 1.5;
+
     while (true) {
-        a += 1;
+        a +%= 1;
+        f += 0.1;
         asm volatile ("nop");
-        if (a % 10000 == 0) {
+        if (a % 1000000 == 0) {
+            led.put(1);
             asm volatile ("nop");
             microzig.cpu.interrupt.exception.set_pending(.PendSV);
         }

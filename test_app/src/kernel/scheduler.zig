@@ -73,8 +73,11 @@ pub fn pendsv_isr() callconv(.Naked) void {
         // Store the context to the stack that was not saved on exception entry.
         // Test for bit 4 in the LR to check if FPU was active, if so, save its context (expensive!)
         \\ mrs          r0, psp
-
-        //\\ vlstm        r0
+        \\
+        \\ tst          r14, #0x10
+        \\ it eq
+        \\ vstmdbeq     r0!, {s16-s31}
+        \\     
         \\ stmdb        r0!, {r4-r11, r14}
         \\
         // Obtain the active task by dereferencing r2.
@@ -104,9 +107,10 @@ pub fn pendsv_isr() callconv(.Naked) void {
         \\
         // Now execute the context saving in reverse, pop registers from the stack
         \\ ldmia        r0!, {r4-r11, r14}
-        //\\ tst          r14, #0x10
-        //\\ it           eq
-        //\\ vldmiaeq     r0!, {s16-s31}
+        \\
+        \\ tst          r14, #0x10
+        \\ it           eq
+        \\ vldmiaeq     r0!, {s16-s31}
         \\
         \\ msr          psp, r0
         \\ isb
