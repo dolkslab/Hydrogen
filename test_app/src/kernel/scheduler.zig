@@ -2,8 +2,23 @@ const std = @import("std");
 const Task = @import("task.zig");
 const microzig = @import("microzig");
 
+// so what we need for task queue list whatever
+// ready task list. freertos uses an array of them matching the number of priorities configured
+// delayed task list. freertos uses 2 of them, to deal with rollovers of the tick counter.
+// it swaps them when there is a rollover. we can do the same or think of some other way to deal with this
+// the delayed task list is essentially the blocked task list.
+// by default all tasks are delayed for some time when they are blocked, with this delay being treated as a "timeout"
+// it does also have suspended tasks if you configure it, but its not strictly required
+// the actual list type they use is linked list, which seems smartaceous. but they do track in which list the item is,
+// which is something we probably also want.
+// for the delayed list the item value is the tick count at which the task is resumed
+// for the ready lists the item value is meaningless ig
+// i think for the ready queue/list we can try to use 1 list for now
+
 // The actual queue of tasks to run
-var task_queue: Queue = undefined;
+
+
+
 
 var active_task: u16 = undefined;
 pub var temp_shit = [2]Task{ undefined, undefined };
@@ -141,8 +156,4 @@ pub fn svcall_isr() callconv(.C) void {
     );
 }
 
-pub const Queue = std.PriorityQueue(Task, void, compare);
-// highest priority value gets popped first
-fn compare(_: void, a: Task, b: Task) std.math.Order {
-    return std.math.order(a.priority, b.priority).invert();
-}
+pub fn systick_isr() callconv(.C) void {}

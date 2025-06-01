@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Self = @This();
+const Task = @This();
 
 top_of_stack: [*]align(8) usize,
 stack_size: usize,
@@ -8,17 +8,16 @@ stack_size: usize,
 main_entry: *const MainEntry,
 
 state: State,
+sched_list_item: SchedulerListItem,
 
-priority: Priority,
-
-pub fn init(main_entry: *const MainEntry, stack_buf: []align(8) usize, base_priority: Priority) Self {
+pub fn init(main_entry: *const MainEntry, stack_buf: []align(8) usize, base_priority: Priority) Task {
     var unaligned_stack: *usize = &stack_buf[stack_buf.len - 1];
     // terrible no good
     unaligned_stack = @ptrFromInt(@intFromPtr(unaligned_stack) & @as(usize, 0xFFFFFFF8));
 
     const aligned_top_of_stack: *align(8) usize = @alignCast(unaligned_stack);
 
-    var new_task: Self = .{
+    var new_task: Task = .{
         .top_of_stack = @ptrCast(aligned_top_of_stack),
         .stack_size = stack_buf.len,
         .main_entry = main_entry,
@@ -31,7 +30,7 @@ pub fn init(main_entry: *const MainEntry, stack_buf: []align(8) usize, base_prio
 }
 
 /// Initialise the stack frame of this task to simulate exception entry
-fn init_stack(self: *Self) void {
+fn init_stack(self: *Task) void {
     // decrement the stack pointer first since the stack grows downwards
     self.top_of_stack -= BasicContext.Size / @sizeOf(usize) + 1;
     const initial_context: *BasicContext = (@ptrCast(self.top_of_stack));
@@ -56,9 +55,19 @@ fn init_stack(self: *Self) void {
 pub const MainEntry = fn () i32;
 
 pub const State = enum {
-    READY,
     RUNNING,
+    READY,
     BLOCKED,
+};
+
+pub const SchedulerListItem = struct {
+    value: union(State) {
+        RUNNING: void,
+        READY: Priority,
+        BLOCKED: u32,
+    },
+
+    node: std.DoublyLinkedList.Node,
 };
 
 pub const Priority = i16;
