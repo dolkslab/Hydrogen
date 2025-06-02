@@ -22,8 +22,8 @@ pub fn start() void {
 
     microzig.chip.peripherals.PPB.FPCCR.modify(.{ .LSPACT = 1 });
 
-    Scheduler.create_ready_task(idle_task_fn, -2) catch unreachable;
-    Scheduler.create_ready_task(other_task_fn, 1) catch unreachable;
+    Scheduler.create_ready_task(idle_task_fn, 1000) catch unreachable;
+    Scheduler.create_ready_task(other_task_fn, 0) catch unreachable;
 
     // the FPU should be enabled just before starting the first task.
     microzig.cpu.fpu.enable_full();

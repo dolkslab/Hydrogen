@@ -26,7 +26,7 @@ pub fn insertAfterPriority(list: *SchedulerQueue, comptime ItemType: type, new_i
         }
         it = n.next;
     }
-    list.prepend(&new_item.node);
+    list.append(&new_item.node);
 }
 
 /// This struct contains only the prev and next pointers and not any data
