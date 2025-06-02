@@ -1,6 +1,8 @@
 const std = @import("std");
 const Task = @import("task.zig");
 const microzig = @import("microzig");
+const SchedulerQueue = @import("SchedulerQueue.zig");
+const port = @import("port.zig");
 
 // so what we need for task queue list whatever
 // ready task list. freertos uses an array of them matching the number of priorities configured
@@ -15,145 +17,80 @@ const microzig = @import("microzig");
 // for the ready lists the item value is meaningless ig
 // i think for the ready queue/list we can try to use 1 list for now
 
-// The actual queue of tasks to run
+pub const MAX_TASKS = 10;
 
+var task_buffer: [@sizeOf(Task) * MAX_TASKS]u8 = undefined;
+var task_allocator: std.heap.FixedBufferAllocator = undefined;
 
+var stacks: [MAX_TASKS][256]usize align(8) = undefined;
 
+var n_tasks: u32 = 0;
+
+var ready_queue: SchedulerQueue = .{};
+var delayed_queue: SchedulerQueue = .{};
 
 var active_task: u16 = undefined;
-pub var temp_shit = [2]Task{ undefined, undefined };
 
-// The current active task.
-var current_task: *Task = undefined;
+// The current active task. may have to move this to port
+pub var current_task: *Task = undefined;
 
-pub fn init_queue(allocator: std.mem.Allocator, base_task: Task) void {
-    task_queue = Queue.init(allocator, {});
-    //add_task(base_task) catch unreachable;
-
-    // we shall just simulate the queue for now
-    active_task = 0;
-    temp_shit[active_task] = base_task;
-
-    current_task = &temp_shit[active_task];
+pub fn init() void {
+    task_allocator = std.heap.FixedBufferAllocator.init(&task_buffer);
 }
 
-pub fn add_task(new_task: Task) !void {
-    try task_queue.add(new_task);
+fn enqueue_ready_task(new_task: *Task) void {
+    new_task.sched_list_item = .{ .value = .{
+        .priority = new_task.base_priority,
+    } };
+    ready_queue.insertAfterPriority(Task.SchedulerListItem, &new_task.sched_list_item, Task.SchedulerListItem.compare);
 }
 
-pub fn get_next_ready_task() ?*Task {
-    // var task_iterator = task_queue.iterator();
+pub fn create_ready_task(main_entry: Task.MainEntry, base_priority: Task.Priority) !void {
+    const new_task = try task_allocator.allocator().create(Task);
+    new_task.* = Task.init(main_entry, base_priority, &stacks[n_tasks]);
 
-    // while (task_iterator.next()) |task| {
-    //     if (task.state == .READY) return &task;
-    // }
+    enqueue_ready_task(new_task);
 
-    // return null;
-    active_task = blk: {
-        if (active_task == temp_shit.len - 1) {
-            break :blk 0;
-        } else {
-            break :blk active_task + 1;
-        }
-    };
-    return &temp_shit[active_task];
+    n_tasks += 1;
 }
 
 pub fn start_first_task() void {
-    //@breakpoint();
-    asm volatile (
-        \\ mov r0, #0       
-        \\ msr control, r0  
-        \\ cpsie i          
-        \\ cpsie f          
-        \\ dsb              
-        \\ isb             
-        \\ svc #0x69            
-        \\ nop
-        : //outputs
-        : //inputs
-        : "r0");
+    std.debug.assert(!ready_queue.is_empty());
+
+    current_task = get_next_ready_task() orelse @panic("Create a task you lazy bum");
+    _ = ready_queue.popFirst();
+    current_task.state = @enumFromInt(1);
+
+    port.jump_to_first_task();
+}
+
+/// Returns the highest priority ready task in the queue or returns null when there are no ready tasks.
+/// Does NOT pop the task from the queue. this has to be done afterwards if switching.
+pub fn get_next_ready_task() ?*Task {
+    const first_ready_node = ready_queue.first orelse return null;
+
+    const item: *Task.SchedulerListItem = @fieldParentPtr("node", first_ready_node);
+
+    const ret: *Task = @fieldParentPtr("sched_list_item", item);
+    return ret;
+}
+
+pub fn get_current_task() *const Task {
+    return current_task;
 }
 
 // has to be export since we link into this from inline asm
 export fn switch_current_task() void {
-    current_task = get_next_ready_task() orelse &temp_shit[0];
-}
-
-const max_prio_level = std.fmt.parseInt(u8, microzig.chip.properties.@"cpu.nvicPrioBits", 10) catch unreachable;
-
-pub fn pendsv_isr() callconv(.Naked) void {
-    asm volatile (
-        \\
-        // Store the context to the stack that was not saved on exception entry.
-        // Test for bit 4 in the LR to check if FPU was active, if so, save its context (expensive!)
-        \\ mrs          r0, psp
-        \\
-        \\ tst          r14, #0x10
-        \\ it eq
-        \\ vstmdbeq     r0!, {s16-s31}
-        \\     
-        \\ stmdb        r0!, {r4-r11, r14}
-        \\
-        // Obtain the active task by dereferencing r2.
-        // when we deref it again this gives the SP location.
-        \\ ldr          r1,  [r2] 
-        \\ str          r0, [r1]
-        \\ 
-        // Save the relevant context for this function, which is only R2
-        // Raise the basepri for some reason
-        \\ stmdb        sp!, {r2}
-        \\ mov          r1, %[max_prio_lvl]
-        \\ msr          basepri, r1
-        \\ isb
-        \\
-        // Branch to the switch_current_task function which will repopulate current_task with the new
-        // task to execute.
-        \\ bl           switch_current_task
-        \\
-        // Reset the basepri to 0
-        \\ mov          r0, #0
-        \\ msr          basepri, r0 
-        \\
-        // Restore R2, deref it into r1, this now has the new active task.
-        \\ ldmia        sp!, {r2}
-        \\ ldr          r1, [r2]
-        \\ ldr          r0, [r1]
-        \\
-        // Now execute the context saving in reverse, pop registers from the stack
-        \\ ldmia        r0!, {r4-r11, r14}
-        \\
-        \\ tst          r14, #0x10
-        \\ it           eq
-        \\ vldmiaeq     r0!, {s16-s31}
-        \\
-        \\ msr          psp, r0
-        \\ isb
-        // The psp now holds the stack frame of the new task as if it was just interrupted.
-        // R14 holds the execution mode for this task. BX exits the handler.
-        \\ bx           r14
-        : //outputs
-        : [current_task_ptr] "{r2}" (&current_task),
-          [max_prio_lvl] "i" (max_prio_level),
-    );
-}
-
-pub fn svcall_isr() callconv(.C) void {
-    //@breakpoint();
-    const sp_addr: [*]align(8) usize = current_task.top_of_stack;
-    // look ma no compiler
-    asm volatile (
-        \\ ldmia r0!, {r4-r11, r14}
-        \\ msr psp, r0
-        \\ isb
-        \\ mov r0, #0
-        \\ msr basepri, r0
-        \\ mov r14, #0xfffffffd
-        \\ bx r14
-        : //outputs
-        : [sp_addr] "{r0}" (sp_addr),
-        : ".ltorg"
-    );
+    if (@intFromEnum(current_task.state) > 0) {
+        return;
+    } else if (get_next_ready_task()) |next_ready_task| {
+        _ = ready_queue.popFirst();
+        current_task = next_ready_task;
+        current_task.state = @enumFromInt(1);
+    } else {
+        // now we should go to an idle task. for now we could just
+        current_task.state = @enumFromInt(1);
+    }
 }
 
 pub fn systick_isr() callconv(.C) void {}

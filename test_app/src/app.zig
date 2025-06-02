@@ -21,8 +21,8 @@ pub const rp2350_options: microzig.Options = .{
     .log_level = .debug,
     .logFn = rp2xxx.uart.logFn,
     .interrupts = .{
-        .PendSV = .{ .naked = kernel.Scheduler.pendsv_isr },
-        .SVCall = .{ .c = kernel.Scheduler.svcall_isr },
+        .PendSV = .{ .naked = kernel.port.pendsv_isr },
+        .SVCall = .{ .c = kernel.port.svcall_isr },
     },
 };
 
