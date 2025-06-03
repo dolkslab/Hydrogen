@@ -17,7 +17,7 @@ pub fn insertAfterPriority(list: *SchedulerList, comptime ItemType: type, new_it
     var it: ?*SchedulerList.Node = list.first;
 
     while (it) |n| {
-        const existing_item: *ItemType = @fieldParentPtr("node", n);
+        const existing_item: *ItemType = @alignCast(@fieldParentPtr("node", n));
         // we will insert the item at the edge of where the value increases.
 
         if (compareFn(existing_item.*, new_item.*) == Order.gt) {

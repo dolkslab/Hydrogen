@@ -1,15 +1,38 @@
 const std = @import("std");
 const microzig = @import("microzig");
+const app = @import("../app.zig");
 
 // we will do this in the jankhui way for now
 
-const Options = struct {
+pub const Options = struct {
     tickcount_type: type = u32,
-    max_delay: Options.tickcount_type = std.math.maxInt(Options.tickcount_type),
+
     priority_type: type = i16,
 
-    pub const min_priority = std.math.maxInt(Options.tickcount_type) - 1;
+    max_n_tasks: comptime_int = 10,
+
+    max_delay: ?comptime_int = null,
+
+    n_task_notifications: comptime_int = 2,
+
+    pub fn lowest_priority(options: *const Options) comptime_int {
+        return std.math.maxInt(options.priority_type) - 1;
+    }
+
+    pub fn highest_priority(options: *const Options) comptime_int {
+        return std.math.minInt(options.priority_type);
+    }
+
+    pub fn get_max_delay(options: *const Options) comptime_int {
+        if (options.max_delay) |max_delay| {
+            return max_delay;
+        } else {
+            return std.math.maxInt(options.tickcount_type);
+        }
+    }
 };
+
+pub const hydrogen_options: Options = if (@hasDecl(app, "hydrogen_options")) app.hydrogen_options else .{};
 
 pub const scheduler = @import("scheduler.zig");
 pub const Task = @import("task.zig");
@@ -41,6 +64,11 @@ pub fn start() void {
     if (microzig.cpu.fpu.present) {
         microzig.cpu.fpu.enable_full();
     }
+
+    microzig.cpu.interrupt.exception.set_priority(.PendSV, .lowest);
+    microzig.cpu.interrupt.exception.set_priority(.SVCall, .lowest);
+    microzig.cpu.interrupt.exception.set_priority(.SysTick, @enumFromInt(1));
+
     microzig.cpu.interrupt.enable_interrupts();
     port.start_systick();
     scheduler.start_first_task();

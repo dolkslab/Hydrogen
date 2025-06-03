@@ -3,6 +3,112 @@ const microzig = @import("microzig");
 const scheduler = @import("scheduler.zig");
 const Task = @import("task.zig");
 
+pub const Stack = struct {
+    pub const StackPtr = [*]align(8) usize;
+
+    /// Initialise the stack frame of this task to simulate exception entry
+    pub fn init_stack(stack_ptr: *StackPtr, main_entry: *const Task.MainEntry) void {
+        // decrement the stack pointer first since the stack grows downwards
+        stack_ptr.* -= BasicContext.Size / @sizeOf(usize) + 1;
+        var initial_context: *BasicContext = (@ptrCast(stack_ptr.*));
+
+        initial_context.return_state = .{
+            .active_stack_pointer = .PSP,
+            .exec_mode = .THREAD,
+            .fpu_state = .INACTIVE,
+        };
+
+        initial_context.LR = @intFromPtr(&default_return);
+        initial_context.return_adress = @intFromPtr(main_entry) & 0xFFFFFFFE;
+        initial_context.xPSR = INITIAL_XPSR;
+        initial_context.a1 = 1000;
+        initial_context.a2 = 1001;
+        initial_context.a3 = 1002;
+        initial_context.a4 = 1003;
+        initial_context.IP = 1012;
+    }
+
+    //for now i will put this here
+
+    pub const ReturnState = packed struct(usize) {
+        _reserved2: u2 = 0b01,
+        active_stack_pointer: enum(u1) {
+            MSP = 0x0,
+            PSP = 0x1,
+        },
+        exec_mode: enum(u1) { HANDLER = 0x0, THREAD = 0x1 },
+        fpu_state: enum(u1) {
+            ACTIVE = 0x0,
+            INACTIVE = 0x1,
+        },
+        _reserved: u27 = std.math.maxInt(u27),
+    };
+
+    pub const BasicContext = packed struct(u544) {
+        // remaining context to be saved
+        v1: usize,
+        v2: usize,
+        v3: usize,
+        v4: usize,
+        v5: usize,
+        v6: usize,
+        v7: usize,
+        v8: usize,
+        return_state: ReturnState,
+
+        // AAPCS frame
+        a1: usize,
+        a2: usize,
+        a3: usize,
+        a4: usize,
+        IP: usize,
+        LR: usize,
+        return_adress: usize,
+        xPSR: usize,
+        const Size = 17 * 4;
+    };
+
+    pub const ExtendedContext = packed struct {
+        // remaining context to be saved
+        v1: usize,
+        v2: usize,
+        v3: usize,
+        v4: usize,
+        v5: usize,
+        v6: usize,
+        v7: usize,
+        v8: usize,
+        return_state: ReturnState,
+        //remaining floating point registers
+        FP_s2: [16]usize, //s16-31
+
+        // AAPCS extended frame
+        a1: usize,
+        a2: usize,
+        a3: usize,
+        a4: usize,
+        IP: usize,
+        LR: usize,
+        return_adress: usize,
+        xPSR: usize,
+        //extended floating point context
+        FP_s: [16]usize, //s0-15
+        FPSCR: usize,
+        _reserved0: usize,
+    };
+
+    // set bit 24 of the XPSR to indicate thumb mode, other bits can be left zero
+    const INITIAL_XPSR: usize = 1 << 24;
+
+    //start initial task in thread mode, use PSP
+    const INITIAL_LR_EXC_RET: usize = 0xFFFFFFFD;
+
+    // this should not be here either
+    fn default_return() void {
+        @panic("Illegal return from base process!");
+    }
+};
+
 pub fn jump_to_first_task() void {
     //@breakpoint();
     asm volatile (
@@ -37,7 +143,7 @@ fn pendsv_isr_fpu() callconv(.Naked) void {
         // Obtain the active task by dereferencing r2.
         // when we deref it again this gives the SP location.
         \\ ldr          r1,  [r2] 
-        \\ str          r0, [r1], #[task_sp_offset]
+        \\ str          r0, [r1], #0
         \\ 
         // Save the relevant context for this function, which is only R2
         // Raise the basepri for some reason
@@ -74,7 +180,7 @@ fn pendsv_isr_fpu() callconv(.Naked) void {
         : //outputs
         : [current_task_ptr] "{r2}" (&scheduler.current_task),
           [max_prio_lvl] "i" (max_prio_level),
-          [task_sp_offset] "I" (@offsetOf(Task, "top_of_stack")),
+          //[task_sp_offset] "I" (@offsetOf(Task, "top_of_stack")),
     );
 }
 
@@ -90,7 +196,7 @@ fn pendsv_isr_no_fpu() callconv(.Naked) void {
         // Obtain the active task by dereferencing r2.
         // when we deref it again this gives the SP location.
         \\ ldr          r1,  [r2] 
-        \\ str          r0, [r1], #[task_sp_offset]
+        \\ str          r0, [r1], #0
         \\ 
         // Save the relevant context for this function, which is only R2
         // Raise the basepri for some reason
@@ -123,7 +229,7 @@ fn pendsv_isr_no_fpu() callconv(.Naked) void {
         : //outputs
         : [current_task_ptr] "{r2}" (&scheduler.current_task),
           [max_prio_lvl] "i" (max_prio_level),
-          [task_sp_offset] "I" (@offsetOf(Task, "top_of_stack")),
+          //[task_sp_offset] "I" (@offsetOf(Task, "top_of_stack")),
     );
 }
 

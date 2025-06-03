@@ -27,6 +27,10 @@ pub const microzig_options: microzig.Options = .{
     },
 };
 
+pub const hydrogen_options: kernel.Options = .{
+    .tickcount_type = u32,
+};
+
 pub fn main() !void {
     // init uart logging
     uart_tx_pin.set_function(.uart);
@@ -38,6 +42,7 @@ pub fn main() !void {
     kernel.init();
 
     try kernel.scheduler.create_ready_task(blink_task_fn, 0);
+    try kernel.scheduler.create_ready_task(blink_task_fn_2, 1);
 
     kernel.start();
 
@@ -54,6 +59,25 @@ fn blink_task_fn() i32 {
     led.set_function(.sio);
     led.set_direction(.out);
     led.put(0);
+    while (true) {
+        a +%= 1;
+        f += 0.1;
+
+        asm volatile ("nop");
+        kernel.scheduler.delay(777);
+        led.toggle();
+    }
+
+    return 0;
+}
+
+fn blink_task_fn_2() i32 {
+    var a: u32 = 0;
+    var f: f32 = 1.5;
+    led.set_function(.sio);
+    led.set_direction(.out);
+    led.put(0);
+
     while (true) {
         a +%= 1;
         f += 0.1;
