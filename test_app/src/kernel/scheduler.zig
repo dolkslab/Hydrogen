@@ -1,7 +1,7 @@
 const std = @import("std");
 const Task = @import("task.zig");
 const microzig = @import("microzig");
-const SchedulerQueue = @import("SchedulerQueue.zig");
+const SchedulerList = @import("SchedulerList.zig");
 const port = @import("port.zig");
 
 // so what we need for task queue list whatever
@@ -19,15 +19,19 @@ const port = @import("port.zig");
 
 pub const MAX_TASKS = 10;
 
-var task_buffer: [@sizeOf(Task) * MAX_TASKS]u8 = undefined;
-var task_allocator: std.heap.FixedBufferAllocator = undefined;
-
-var stacks: [MAX_TASKS][256]usize align(8) = undefined;
-
 var n_tasks: u32 = 0;
 
-var ready_queue: SchedulerQueue = .{};
-var delayed_queue: SchedulerQueue = .{};
+/// stack buffer and task buffer
+var stacks: [MAX_TASKS][256]usize align(8) = undefined;
+var task_buffer: [@sizeOf(Task) * MAX_TASKS]u8 align(@alignOf(Task)) = undefined;
+var task_allocator: std.heap.FixedBufferAllocator = undefined;
+
+/// special spot for the idle task only
+var default_idle_task_stack: [32]usize align(8) = undefined;
+var default_idle_task: Task = undefined;
+
+var ready_queue: SchedulerList = .{};
+var delayed_queue: SchedulerList = .{};
 
 var active_task: u16 = undefined;
 
@@ -36,13 +40,27 @@ pub var current_task: *Task = undefined;
 
 pub fn init() void {
     task_allocator = std.heap.FixedBufferAllocator.init(&task_buffer);
+
+    default_idle_task = Task.init(idle_task_fn, std.math.maxInt(Task.Priority), &default_idle_task_stack);
+
+    enqueue_ready_task(&default_idle_task);
 }
 
-fn enqueue_ready_task(new_task: *Task) void {
-    new_task.sched_list_item = .{ .value = .{
-        .priority = new_task.base_priority,
-    } };
-    ready_queue.insertAfterPriority(Task.SchedulerListItem, &new_task.sched_list_item, Task.SchedulerListItem.compare);
+fn enqueue_ready_task(task: *Task) void {
+    task.sched_list_item = .{ .value = .{ .priority = task.base_priority } };
+    task.state = @enumFromInt(1);
+
+    ready_queue.insertAfterPriority(Task.SchedulerListItem, &task.sched_list_item, Task.SchedulerListItem.compare);
+}
+
+fn enqueue_delayed_task(task: *Task, delay_ticks: settings.tickcount_type) void {
+    // enter critical section
+    const cs = microzig.interrupt.enter_critical_section();
+    defer cs.leave();
+    task.sched_list_item = .{ .value = .{ .ticks = delay_ticks } };
+
+    task.state = .BLOCKED;
+    delayed_queue.insertAfterPriority(Task.SchedulerListItem, &task.sched_list_item, Task.SchedulerListItem.compare);
 }
 
 pub fn create_ready_task(main_entry: Task.MainEntry, base_priority: Task.Priority) !void {
@@ -82,15 +100,66 @@ pub fn get_current_task() *const Task {
 // has to be export since we link into this from inline asm
 export fn switch_current_task() void {
     if (@intFromEnum(current_task.state) > 0) {
-        return;
-    } else if (get_next_ready_task()) |next_ready_task| {
+        enqueue_ready_task(current_task);
+    }
+
+    if (get_next_ready_task()) |next_ready_task| {
         _ = ready_queue.popFirst();
+
         current_task = next_ready_task;
         current_task.state = @enumFromInt(1);
     } else {
-        // now we should go to an idle task. for now we could just
-        current_task.state = @enumFromInt(1);
+        @panic("SHITTT");
     }
 }
 
-pub fn systick_isr() callconv(.C) void {}
+const settings = struct {
+    const tickcount_type = u32;
+    const max_delay: tickcount_type = std.math.maxInt(tickcount_type);
+};
+
+var tickcount: settings.tickcount_type = 0;
+var tick_rollovers: u32 = 0;
+
+const led = microzig.hal.gpio.num(25);
+pub fn tick() bool {
+    const const_ticks = tickcount + 1;
+
+    var switch_required = false;
+    var it: ?*SchedulerList.Node = delayed_queue.first;
+    while (it) |n| {
+        const existing_item: *Task.SchedulerListItem = @fieldParentPtr("node", n);
+
+        if (const_ticks >= existing_item.value.ticks) {
+            // move the task to the ready queue, popping it from the delayed list.
+            const task: *Task = @fieldParentPtr("sched_list_item", existing_item);
+            enqueue_ready_task(task);
+            _ = delayed_queue.popFirst();
+            switch_required = true;
+        } else {
+            break;
+        }
+
+        it = n.next;
+    }
+
+    tickcount = const_ticks;
+
+    return switch_required;
+}
+
+pub fn delay(ticks: settings.tickcount_type) void {
+    enqueue_delayed_task(current_task, tickcount + ticks);
+
+    port.pend_context_switch();
+    microzig.cpu.wfe();
+}
+
+fn idle_task_fn() i32 {
+    //@breakpoint();
+    var a: u32 = 0;
+    while (true) {
+        a +%= 1;
+        asm volatile ("nop");
+    }
+}

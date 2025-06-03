@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const Task = @This();
-const SchedulerQueue = @import("SchedulerQueue.zig");
+const SchedulerList = @import("SchedulerList.zig");
 
 top_of_stack: [*]align(8) usize,
 stack_size: usize,
@@ -79,7 +79,7 @@ pub const SchedulerListItem = struct {
         priority: Priority,
     },
 
-    node: SchedulerQueue.Node = .{ .prev = null, .next = null },
+    node: SchedulerList.Node = .{ .prev = null, .next = null },
 
     pub fn compare(a: SchedulerListItem, b: SchedulerListItem) std.math.Order {
         // should probably assert the active tags are the same but eh

@@ -17,16 +17,15 @@ const chip = rp2xxx.compatibility.chip;
 // const timer = if (chip == .RP2040) peripherals.TIMER else peripherals.TIMER0;
 // const timer_irq = if (chip == .RP2040) .TIMER_IRQ_0 else .TIMER0_IRQ_0;
 
-pub const rp2350_options: microzig.Options = .{
+pub const microzig_options: microzig.Options = .{
     .log_level = .debug,
     .logFn = rp2xxx.uart.logFn,
     .interrupts = .{
         .PendSV = .{ .naked = kernel.port.pendsv_isr },
         .SVCall = .{ .c = kernel.port.svcall_isr },
+        .SysTick = .{ .c = kernel.port.systick_isr },
     },
 };
-
-pub const microzig_options = rp2350_options;
 
 pub fn main() !void {
     // init uart logging
@@ -36,10 +35,10 @@ pub fn main() !void {
         .clock_config = rp2xxx.clock_config,
     });
     rp2xxx.uart.init_logger(uart);
-    led.set_function(.sio);
-    led.set_direction(.out);
-    led.toggle();
-    microzig.cpu.interrupt.enable_interrupts();
+    kernel.init();
+
+    try kernel.scheduler.create_ready_task(blink_task_fn, 0);
+
     kernel.start();
 
     //led.set_function(.sio);
@@ -47,4 +46,22 @@ pub fn main() !void {
     while (true) {
         asm volatile ("wfi");
     }
+}
+
+fn blink_task_fn() i32 {
+    var a: u32 = 0;
+    var f: f32 = 1.5;
+    led.set_function(.sio);
+    led.set_direction(.out);
+    led.put(0);
+    while (true) {
+        a +%= 1;
+        f += 0.1;
+
+        asm volatile ("nop");
+        kernel.scheduler.delay(1000);
+        led.toggle();
+    }
+
+    return 0;
 }

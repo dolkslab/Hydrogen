@@ -4,7 +4,7 @@ const Task = @import("task.zig");
 const debug = std.debug;
 const assert = debug.assert;
 const testing = std.testing;
-const SchedulerQueue = @This();
+const SchedulerList = @This();
 const Order = std.math.Order;
 
 first: ?*Node = null,
@@ -13,8 +13,8 @@ last: ?*Node = null,
 // or maybe a bit more. should maybe make this type generic? idk ill just see if any of this works
 //
 
-pub fn insertAfterPriority(list: *SchedulerQueue, comptime ItemType: type, new_item: *ItemType, comptime compareFn: fn (a: ItemType, b: ItemType) Order) void {
-    var it: ?*SchedulerQueue.Node = list.first;
+pub fn insertAfterPriority(list: *SchedulerList, comptime ItemType: type, new_item: *ItemType, comptime compareFn: fn (a: ItemType, b: ItemType) Order) void {
+    var it: ?*SchedulerList.Node = list.first;
 
     while (it) |n| {
         const existing_item: *ItemType = @fieldParentPtr("node", n);
@@ -22,7 +22,7 @@ pub fn insertAfterPriority(list: *SchedulerQueue, comptime ItemType: type, new_i
 
         if (compareFn(existing_item.*, new_item.*) == Order.gt) {
             list.insertBefore(n, &new_item.node);
-            break;
+            return;
         }
         it = n.next;
     }
@@ -37,7 +37,7 @@ pub const Node = struct {
     next: ?*Node = null,
 };
 
-pub fn insertAfter(list: *SchedulerQueue, existing_node: *Node, new_node: *Node) void {
+pub fn insertAfter(list: *SchedulerList, existing_node: *Node, new_node: *Node) void {
     new_node.prev = existing_node;
     if (existing_node.next) |next_node| {
         // Intermediate node.
@@ -51,7 +51,7 @@ pub fn insertAfter(list: *SchedulerQueue, existing_node: *Node, new_node: *Node)
     existing_node.next = new_node;
 }
 
-pub fn insertBefore(list: *SchedulerQueue, existing_node: *Node, new_node: *Node) void {
+pub fn insertBefore(list: *SchedulerList, existing_node: *Node, new_node: *Node) void {
     new_node.next = existing_node;
     if (existing_node.prev) |prev_node| {
         // Intermediate node.
@@ -70,7 +70,7 @@ pub fn insertBefore(list: *SchedulerQueue, existing_node: *Node, new_node: *Node
 /// Arguments:
 ///     list1: the list to concatenate onto
 ///     list2: the list to be concatenated
-pub fn concatByMoving(list1: *SchedulerQueue, list2: *SchedulerQueue) void {
+pub fn concatByMoving(list1: *SchedulerList, list2: *SchedulerList) void {
     const l2_first = list2.first orelse return;
     if (list1.last) |l1_last| {
         l1_last.next = list2.first;
@@ -88,7 +88,7 @@ pub fn concatByMoving(list1: *SchedulerQueue, list2: *SchedulerQueue) void {
 ///
 /// Arguments:
 ///     new_node: Pointer to the new node to insert.
-pub fn append(list: *SchedulerQueue, new_node: *Node) void {
+pub fn append(list: *SchedulerList, new_node: *Node) void {
     if (list.last) |last| {
         // Insert after last.
         list.insertAfter(last, new_node);
@@ -102,7 +102,7 @@ pub fn append(list: *SchedulerQueue, new_node: *Node) void {
 ///
 /// Arguments:
 ///     new_node: Pointer to the new node to insert.
-pub fn prepend(list: *SchedulerQueue, new_node: *Node) void {
+pub fn prepend(list: *SchedulerList, new_node: *Node) void {
     if (list.first) |first| {
         // Insert before first.
         list.insertBefore(first, new_node);
@@ -119,7 +119,7 @@ pub fn prepend(list: *SchedulerQueue, new_node: *Node) void {
 ///
 /// Arguments:
 ///     node: Pointer to the node to be removed.
-pub fn remove(list: *SchedulerQueue, node: *Node) void {
+pub fn remove(list: *SchedulerList, node: *Node) void {
     if (node.prev) |prev_node| {
         // Intermediate node.
         prev_node.next = node.next;
@@ -141,7 +141,7 @@ pub fn remove(list: *SchedulerQueue, node: *Node) void {
 ///
 /// Returns:
 ///     A pointer to the last node in the list.
-pub fn pop(list: *SchedulerQueue) ?*Node {
+pub fn pop(list: *SchedulerList) ?*Node {
     const last = list.last orelse return null;
     list.remove(last);
     return last;
@@ -151,7 +151,7 @@ pub fn pop(list: *SchedulerQueue) ?*Node {
 ///
 /// Returns:
 ///     A pointer to the first node in the list.
-pub fn popFirst(list: *SchedulerQueue) ?*Node {
+pub fn popFirst(list: *SchedulerList) ?*Node {
     const first = list.first orelse return null;
     list.remove(first);
     return first;
@@ -161,13 +161,13 @@ pub fn popFirst(list: *SchedulerQueue) ?*Node {
 ///
 /// This operation is O(N). Consider tracking the length separately rather than
 /// computing it.
-pub fn len(list: SchedulerQueue) usize {
+pub fn len(list: SchedulerList) usize {
     var count: usize = 0;
     var it: ?*const Node = list.first;
     while (it) |n| : (it = n.next) count += 1;
     return count;
 }
 
-pub fn is_empty(list: SchedulerQueue) bool {
+pub fn is_empty(list: SchedulerList) bool {
     return list.first == null;
 }
